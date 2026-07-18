@@ -262,9 +262,14 @@
 
     var r=RATIOS[state.ratio], aw=r.w, ah=r.h;
     if(state.ori==='land'){ var t=aw; aw=ah; ah=t; }
-    var ar=aw/ah, margin=0.92, fw, fh;
-    if(cw/ch > ar){ fh=ch*margin; fw=fh*ar; } else { fw=cw*margin; fh=fw/ar; }
-    var fx=(cw-fw)/2, fy=(ch-fh)/2;
+    // 上部バー（タイトル・各ボタン）に黄色枠がかぶらないよう上に余白を確保
+    var topEl=document.querySelector('.top');
+    var topInset=(topEl?topEl.getBoundingClientRect().height:56)+10;
+    var bottomInset=10;
+    var boxH=ch-topInset-bottomInset;
+    var ar=aw/ah, margin=0.94, fw, fh;
+    if(cw/boxH > ar){ fh=boxH*margin; fw=fh*ar; } else { fw=cw*margin; fh=fw/ar; }
+    var fx=(cw-fw)/2, fy=topInset+(boxH-fh)/2;
 
     var line = state.col==='white' ? '#ffffff' : '#111111';
     var shadow = state.col==='white' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.5)';
