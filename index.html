@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="デッサンスケール">
+<meta name="theme-color" content="#0f1114">
+<title>デッサンスケール</title>
+<style>
+  :root{
+    --bg:#0f1114;
+    --panel:rgba(24,27,33,.82);
+    --panel-solid:#181b21;
+    --stroke:rgba(255,255,255,.10);
+    --text:#eef0f3;
+    --muted:#9aa1ab;
+    --accent:#f4c542;      /* 紙の縁（フレーム） */
+    --accent-dim:rgba(244,197,66,.18);
+    --danger:#ef5f5f;
+    --radius:12px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",YuGothic,Meiryo,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--text);font-family:var(--font);
+    -webkit-user-select:none;user-select:none;overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+  /* ---- 撮影ステージ ---- */
+  .stage{position:relative;flex:1;overflow:hidden;background:#000;touch-action:none}
+  .media{position:absolute;inset:0;transform-origin:center center;will-change:transform}
+  #video,#photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+  #photo{display:none;object-position:center}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+  /* カメラ許可待ち / エラー */
+  .notice{
+    position:absolute;inset:0;display:none;flex-direction:column;gap:14px;
+    align-items:center;justify-content:center;text-align:center;padding:32px;
+    background:radial-gradient(120% 120% at 50% 30%,#1a1d23,#0c0e11);
+  }
+  .notice.show{display:flex}
+  .notice h2{margin:0;font-size:17px;font-weight:600}
+  .notice p{margin:0;max-width:30ch;font-size:13.5px;line-height:1.7;color:var(--muted)}
+  .notice .row{display:flex;gap:10px;margin-top:6px}
+
+  /* ---- 上部の小コントロール ---- */
+  .top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 14px 0;gap:10px;z-index:5}
+  .brand{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.02em;
+    padding:7px 11px;background:var(--panel);border:1px solid var(--stroke);border-radius:999px;
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .top-actions{display:flex;gap:8px}
+  .iconbtn{
+    width:42px;height:42px;display:grid;place-items:center;cursor:pointer;
+    background:var(--panel);border:1px solid var(--stroke);border-radius:11px;color:var(--text);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:transform .12s,background .15s}
+  .iconbtn:active{transform:scale(.92)}
+  .iconbtn.on{background:var(--accent);border-color:var(--accent);color:#1a1400}
+  .iconbtn svg{width:21px;height:21px}
+
+  /* ---- 下部コントロールバー ---- */
+  .dock{
+    padding:9px 10px calc(env(safe-area-inset-bottom,0px) + 9px);
+    background:linear-gradient(180deg,rgba(15,17,20,0) 0%, var(--bg) 30%);
+    display:flex;flex-direction:column;gap:7px;z-index:5}
+  .group{display:flex;flex-direction:column;gap:4px}
+  .glabel{font-size:9px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;padding-left:3px}
+  .seg{display:flex;background:var(--panel-solid);border:1px solid var(--stroke);border-radius:var(--radius);
+    padding:3px;gap:3px;overflow-x:auto;scrollbar-width:none}
+  .seg::-webkit-scrollbar{display:none}
+  .seg button{
+    flex:1 0 auto;min-width:0;white-space:nowrap;cursor:pointer;font-family:inherit;
+    padding:6px 9px;font-size:12px;font-weight:600;color:var(--muted);
+    background:transparent;border:0;border-radius:8px;transition:color .15s,background .15s;line-height:1.1}
+  .seg button .sub{display:block;font-size:9px;font-weight:500;color:var(--muted);margin-top:2px;opacity:.8}
+  .seg button.active{color:#1a1400;background:var(--accent)}
+  .seg button.active .sub{color:#5c4a00;opacity:1}
+  .seg button:not(.active):active{background:var(--accent-dim);color:var(--text)}
+
+  .rowgroups{display:flex;gap:8px}
+  .rowgroups .group{flex:1;min-width:0}
+
+  .file{display:none}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="stage" id="stage">
+    <div class="media" id="media">
+      <video id="video" playsinline autoplay muted></video>
+      <img id="photo" alt="読み込んだ参考写真">
+    </div>
+    <svg id="overlay" preserveAspectRatio="none"></svg>
+
+    <div class="top">
+      <div class="brand"><span class="dot"></span>デッサンスケール</div>
+      <div class="top-actions">
+        <button class="iconbtn" id="btnFlip" title="カメラ切替" aria-label="カメラ切替">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><path d="M12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M14.5 13.5 16 12l1.5 1.5M9.5 10.5 8 12l-1.5-1.5"/></svg>
+        </button>
+        <button class="iconbtn" id="btnFreeze" title="静止/再開" aria-label="静止/再開">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="6" width="3.5" height="12" rx="1"/><rect x="13.5" y="6" width="3.5" height="12" rx="1"/></svg>
+        </button>
+        <button class="iconbtn" id="btnPhoto" title="写真を読み込む" aria-label="写真を読み込む">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="m4 17 5-4 4 3 3-2 4 3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="notice" id="notice">
+      <h2 id="noticeTitle">カメラを起動しています…</h2>
+      <p id="noticeMsg">カメラの使用を許可すると、映像の上にデッサン用のフレームとグリッドが表示されます。</p>
+      <div class="row">
+        <button class="iconbtn" id="btnRetry" style="width:auto;padding:0 16px;font-size:13px;font-weight:600" title="再試行">再試行</button>
+        <button class="iconbtn" id="btnUsePhoto" style="width:auto;padding:0 16px;font-size:13px;font-weight:600" title="写真を使う">写真を使う</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dock">
+    <div class="rowgroups">
+      <div class="group">
+        <span class="glabel">紙の比率</span>
+        <div class="seg" id="segRatio">
+          <button data-ratio="charcoal" class="active">木炭紙<span class="sub">10 : 13</span></button>
+          <button data-ratio="b">B判<span class="sub">1 : √2</span></button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="glabel">向き</span>
+        <div class="seg" id="segOri">
+          <button data-ori="port" class="active">縦</button>
+          <button data-ori="land">横</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="rowgroups">
+      <div class="group">
+        <span class="glabel">分割</span>
+        <div class="seg" id="segGrid">
+          <button data-grid="0">なし</button>
+          <button data-grid="2">4分割<span class="sub">2×2</span></button>
+          <button data-grid="4" class="active">16分割<span class="sub">4×4</span></button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="glabel">線の色</span>
+        <div class="seg" id="segColor">
+          <button data-col="white" class="active">白</button>
+          <button data-col="black">黒</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" accept="image/*" class="file" id="fileInput">
+
+<script>
+(function(){
+  "use strict";
+  var stage=document.getElementById('stage');
+  var media=document.getElementById('media');
+  var video=document.getElementById('video');
+  var photo=document.getElementById('photo');
+  var svg=document.getElementById('overlay');
+  var notice=document.getElementById('notice');
+  var noticeTitle=document.getElementById('noticeTitle');
+  var noticeMsg=document.getElementById('noticeMsg');
+  var fileInput=document.getElementById('fileInput');
+  var SVGNS='http://www.w3.org/2000/svg';
+
+  // 紙の比率（幅:高さ、縦向き基準）
+  var RATIOS={ charcoal:{w:500,h:650,label:'木炭紙 500×650'}, b:{w:1000,h:1414,label:'B判 1:√2'} };
+
+  var state={ ratio:'charcoal', ori:'port', grid:4, col:'white', frozen:false, facing:'environment', mode:'camera' };
+  var stream=null;
+
+  /* ---------- 映像だけの拡大縮小（枠・グリッドは固定） ---------- */
+  var zoom={scale:1, tx:0, ty:0};
+  function applyZoom(){ media.style.transform='translate('+zoom.tx+'px,'+zoom.ty+'px) scale('+zoom.scale+')'; }
+  function resetZoom(){ zoom.scale=1; zoom.tx=0; zoom.ty=0; applyZoom(); }
+  function clampPan(){
+    var w=stage.clientWidth, h=stage.clientHeight;
+    var maxX=(zoom.scale-1)*w/2, maxY=(zoom.scale-1)*h/2;
+    zoom.tx=Math.max(-maxX, Math.min(maxX, zoom.tx));
+    zoom.ty=Math.max(-maxY, Math.min(maxY, zoom.ty));
+  }
+  function tdist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+  function tmid(t){ return {x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2}; }
+  var gest=null, lastTap=0, lastTx=0, lastTy=0;
+
+  stage.addEventListener('touchstart',function(e){
+    if(e.target.closest('button')) return;
+    if(e.touches.length===2){
+      e.preventDefault();
+      gest={mode:'pinch', d0:tdist(e.touches), s0:zoom.scale, m0:tmid(e.touches), tx0:zoom.tx, ty0:zoom.ty};
+    }else if(e.touches.length===1 && zoom.scale>1.01){
+      gest={mode:'pan', x0:e.touches[0].clientX, y0:e.touches[0].clientY, tx0:zoom.tx, ty0:zoom.ty};
+    }
+  },{passive:false});
+
+  stage.addEventListener('touchmove',function(e){
+    if(!gest) return;
+    if(gest.mode==='pinch' && e.touches.length>=2){
+      e.preventDefault();
+      var s=gest.s0*tdist(e.touches)/gest.d0;
+      zoom.scale=Math.max(1, Math.min(6, s));
+      var m=tmid(e.touches);
+      zoom.tx=gest.tx0+(m.x-gest.m0.x);
+      zoom.ty=gest.ty0+(m.y-gest.m0.y);
+      clampPan(); applyZoom();
+    }else if(gest.mode==='pan' && e.touches.length===1){
+      e.preventDefault();
+      zoom.tx=gest.tx0+(e.touches[0].clientX-gest.x0);
+      zoom.ty=gest.ty0+(e.touches[0].clientY-gest.y0);
+      clampPan(); applyZoom();
+    }
+  },{passive:false});
+
+  stage.addEventListener('touchend',function(e){
+    // ダブルタップで等倍リセット
+    if(!gest && e.changedTouches.length===1 && e.touches.length===0 && !e.target.closest('button')){
+      var t=e.changedTouches[0], now=Date.now();
+      if(now-lastTap<320 && Math.abs(t.clientX-lastTx)<32 && Math.abs(t.clientY-lastTy)<32){
+        resetZoom(); lastTap=0; return;
+      }
+      lastTap=now; lastTx=t.clientX; lastTy=t.clientY;
+    }
+    if(e.touches.length===0){
+      gest=null;
+      if(zoom.scale<=1.01) resetZoom();
+    }else if(e.touches.length===1 && gest && gest.mode==='pinch'){
+      gest={mode:'pan', x0:e.touches[0].clientX, y0:e.touches[0].clientY, tx0:zoom.tx, ty0:zoom.ty};
+    }
+  });
+
+  // PCではマウスホイールでズーム（動作確認・PC利用向け）
+  stage.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var s=zoom.scale*(e.deltaY<0?1.12:0.89);
+    zoom.scale=Math.max(1, Math.min(6, s));
+    if(zoom.scale<=1.01){ resetZoom(); return; }
+    clampPan(); applyZoom();
+  },{passive:false});
+
+  /* ---------- オーバーレイ描画 ---------- */
+  function draw(){
+    var cw=stage.clientWidth, ch=stage.clientHeight;
+    if(!cw||!ch) return;
+    svg.setAttribute('viewBox','0 0 '+cw+' '+ch);
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+
+    var r=RATIOS[state.ratio], aw=r.w, ah=r.h;
+    if(state.ori==='land'){ var t=aw; aw=ah; ah=t; }
+    var ar=aw/ah, margin=0.92, fw, fh;
+    if(cw/ch > ar){ fh=ch*margin; fw=fh*ar; } else { fw=cw*margin; fh=fw/ar; }
+    var fx=(cw-fw)/2, fy=(ch-fh)/2;
+
+    var line = state.col==='white' ? '#ffffff' : '#111111';
+    var shadow = state.col==='white' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.5)';
+
+    // 枠の外を暗く（even-odd で切り抜き）
+    var dim=document.createElementNS(SVGNS,'path');
+    dim.setAttribute('d','M0 0 H'+cw+' V'+ch+' H0 Z M'+fx+' '+fy+' H'+(fx+fw)+' V'+(fy+fh)+' H'+fx+' Z');
+    dim.setAttribute('fill','rgba(0,0,0,.46)');
+    dim.setAttribute('fill-rule','evenodd');
+    svg.appendChild(dim);
+
+    function seg(x1,y1,x2,y2,w,color,dash){
+      var l=document.createElementNS(SVGNS,'line');
+      l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);
+      l.setAttribute('stroke',color);l.setAttribute('stroke-width',w);l.setAttribute('stroke-linecap','round');
+      if(dash) l.setAttribute('stroke-dasharray',dash);
+      svg.appendChild(l);
+    }
+    // 内部グリッド（影→本線の二度描きで背景に依存せず見やすく）
+    var n=state.grid;
+    if(n>=2){
+      for(var i=1;i<n;i++){
+        var gx=fx+fw*i/n, gy=fy+fh*i/n;
+        var isCenter=(i===n/2);
+        var wv=isCenter?2.4:1.3;
+        seg(gx,fy,gx,fy+fh, wv+1.4, shadow); seg(gx,fy,gx,fy+fh, wv, line);
+        seg(fx,gy,fx+fw,gy, wv+1.4, shadow); seg(fx,gy,fx+fw,gy, wv, line);
+      }
+    }
+    // 紙の縁（アクセント＝金）
+    var border=document.createElementNS(SVGNS,'rect');
+    border.setAttribute('x',fx);border.setAttribute('y',fy);border.setAttribute('width',fw);border.setAttribute('height',fh);
+    border.setAttribute('fill','none');border.setAttribute('stroke','#f4c542');border.setAttribute('stroke-width','3');
+    svg.appendChild(border);
+
+    // 比率ラベル
+    var tg=document.createElementNS(SVGNS,'text');
+    tg.setAttribute('x',fx+8);tg.setAttribute('y',fy+20);
+    tg.setAttribute('fill','#f4c542');tg.setAttribute('font-size','12');
+    tg.setAttribute('font-family','var(--font)');tg.setAttribute('font-weight','600');
+    tg.setAttribute('style','paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:3px');
+    tg.textContent=r.label+(state.ori==='land'?'（横）':'（縦）');
+    svg.appendChild(tg);
+  }
+
+  /* ---------- カメラ ---------- */
+  function stopStream(){ if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; } }
+
+  function showNotice(title,msg,show){
+    noticeTitle.textContent=title; noticeMsg.innerHTML=msg;
+    notice.classList.toggle('show', show!==false);
+  }
+  function hideNotice(){ notice.classList.remove('show'); }
+
+  function startCamera(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showNotice('カメラが使えません',
+        'このブラウザ／表示ではカメラを利用できません。右上の写真アイコンから参考写真を読み込んで、その上でグリッドを使えます。');
+      return;
+    }
+    state.mode='camera'; photo.style.display='none'; video.style.display=''; resetZoom();
+    showNotice('カメラを起動しています…','許可ダイアログが出たら「許可」を選んでください。');
+    stopStream();
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:state.facing }, audio:false })
+      .then(function(s){
+        stream=s; video.srcObject=s; video.play();
+        state.frozen=false; document.getElementById('btnFreeze').classList.remove('on');
+        hideNotice();
+      })
+      .catch(function(err){
+        var secure=(location.protocol==='https:'||location.hostname==='localhost');
+        if(!secure){
+          showNotice('カメラには保護された接続が必要です',
+            'このページを <b>https</b> で開くとカメラが使えます。今は右上の写真アイコンから参考写真を読み込んでご利用ください。');
+        }else if(err && (err.name==='NotAllowedError'||err.name==='SecurityError')){
+          showNotice('カメラの使用が許可されませんでした',
+            'ブラウザのアドレスバーのカメラ設定から許可し、「再試行」を押してください。写真を読み込んで使うこともできます。');
+        }else{
+          showNotice('カメラを起動できませんでした',
+            '別のアプリがカメラを使用中かもしれません。閉じてから「再試行」を押してください。');
+        }
+      });
+  }
+
+  /* ---------- 写真モード ---------- */
+  function usePhoto(file){
+    var url=URL.createObjectURL(file);
+    photo.onload=function(){ URL.revokeObjectURL(url); };
+    photo.src=url;
+    state.mode='photo'; stopStream(); resetZoom();
+    video.style.display='none'; photo.style.display='block';
+    hideNotice(); draw();
+  }
+
+  /* ---------- UI 配線 ---------- */
+  function wireSeg(id,key,cb){
+    var seg=document.getElementById(id);
+    seg.addEventListener('click',function(e){
+      var b=e.target.closest('button'); if(!b) return;
+      Array.prototype.forEach.call(seg.children,function(c){c.classList.remove('active');});
+      b.classList.add('active');
+      state[key]=b.dataset[Object.keys(b.dataset)[0]];
+      if(key==='grid') state.grid=parseInt(b.dataset.grid,10);
+      if(cb) cb();
+      draw();
+    });
+  }
+  wireSeg('segRatio','ratio'); wireSeg('segOri','ori');
+  wireSeg('segGrid','grid'); wireSeg('segColor','col');
+
+  document.getElementById('btnFlip').addEventListener('click',function(){
+    state.facing = state.facing==='environment' ? 'user' : 'environment';
+    if(state.mode==='camera') startCamera();
+  });
+  document.getElementById('btnFreeze').addEventListener('click',function(){
+    if(state.mode!=='camera') return;
+    state.frozen=!state.frozen;
+    this.classList.toggle('on',state.frozen);
+    if(state.frozen) video.pause(); else video.play();
+  });
+  document.getElementById('btnPhoto').addEventListener('click',function(){ fileInput.click(); });
+  document.getElementById('btnUsePhoto').addEventListener('click',function(){ fileInput.click(); });
+  document.getElementById('btnRetry').addEventListener('click',startCamera);
+  fileInput.addEventListener('change',function(e){ if(e.target.files&&e.target.files[0]) usePhoto(e.target.files[0]); });
+
+  window.addEventListener('resize',draw);
+  if(window.ResizeObserver){ new ResizeObserver(draw).observe(stage); }
+  window.addEventListener('orientationchange',function(){ setTimeout(draw,300); });
+
+  draw();
+  startCamera();
+})();
+</script>
+</body>
+</html>
