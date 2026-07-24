@@ -84,6 +84,11 @@
   .seg button.active .sub{color:#5c4a00;opacity:1}
   .seg button:not(.active):active{background:var(--accent-dim);color:var(--text)}
 
+  /* 静止ボタン：サブ表示がないぶん、隣の「分割」と高さを揃えて中央に置く */
+  #segFreeze{flex:1}
+  #btnFreeze{display:grid;place-items:center;font-size:14px;font-weight:800;color:var(--text)}
+  #btnFreeze.active{color:#1a1400}
+
   .rowgroups{display:flex;gap:8px}
   .rowgroups .group{flex:1;min-width:0}
 
@@ -151,10 +156,8 @@
       </div>
       <div class="group">
         <span class="glabel">カメラ</span>
-        <div class="seg">
-          <button id="btnFreeze" title="静止/再開" aria-label="静止/再開">
-            <span id="freezeLabel">静止</span><span class="sub" id="freezeSub">映像を止める</span>
-          </button>
+        <div class="seg" id="segFreeze">
+          <button id="btnFreeze" title="静止/再開" aria-label="静止/再開">静止</button>
         </div>
       </div>
     </div>
@@ -385,9 +388,9 @@
   });
   function setFreeze(on){
     state.frozen=on;
-    document.getElementById('btnFreeze').classList.toggle('active',on);
-    document.getElementById('freezeLabel').textContent = on?'再開':'静止';
-    document.getElementById('freezeSub').textContent = on?'映像を動かす':'映像を止める';
+    var b=document.getElementById('btnFreeze');
+    b.classList.toggle('active',on);
+    b.textContent = on?'再開':'静止';
   }
   document.getElementById('btnFreeze').addEventListener('click',function(){
     if(state.mode!=='camera') return;
