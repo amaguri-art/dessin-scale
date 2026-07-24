@@ -85,9 +85,8 @@
   .seg button:not(.active):active{background:var(--accent-dim);color:var(--text)}
 
   /* 静止ボタン：サブ表示がないぶん、隣の「分割」と高さを揃えて中央に置く。
-     縁取りは他より太くして、押す場所だとひと目で分かるようにする */
-  #segFreeze{flex:1;border-width:3px;border-color:rgba(255,255,255,.42);padding:2px}
-  #segFreeze.on{border-color:var(--accent)}
+     縁取りの太さは他と同じ1pxのまま、色だけ黄色にして押す場所だと分かるようにする */
+  #segFreeze{flex:1;border-color:var(--accent)}
   #btnFreeze{display:grid;place-items:center;font-size:14px;font-weight:800;color:var(--text)}
   #btnFreeze.active{color:#1a1400}
 
@@ -392,7 +391,6 @@
     state.frozen=on;
     var b=document.getElementById('btnFreeze');
     b.classList.toggle('active',on);
-    document.getElementById('segFreeze').classList.toggle('on',on);
     b.textContent = on?'再開':'静止';
   }
   document.getElementById('btnFreeze').addEventListener('click',function(){
