@@ -106,9 +106,6 @@
         <button class="iconbtn" id="btnFlip" title="カメラ切替" aria-label="カメラ切替">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><path d="M12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M14.5 13.5 16 12l1.5 1.5M9.5 10.5 8 12l-1.5-1.5"/></svg>
         </button>
-        <button class="iconbtn" id="btnFreeze" title="静止/再開" aria-label="静止/再開">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="6" width="3.5" height="12" rx="1"/><rect x="13.5" y="6" width="3.5" height="12" rx="1"/></svg>
-        </button>
         <button class="iconbtn" id="btnPhoto" title="写真を読み込む" aria-label="写真を読み込む">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="m4 17 5-4 4 3 3-2 4 3"/></svg>
         </button>
@@ -153,10 +150,11 @@
         </div>
       </div>
       <div class="group">
-        <span class="glabel">線の色</span>
-        <div class="seg" id="segColor">
-          <button data-col="white" class="active">白</button>
-          <button data-col="black">黒</button>
+        <span class="glabel">カメラ</span>
+        <div class="seg">
+          <button id="btnFreeze" title="静止/再開" aria-label="静止/再開">
+            <span id="freezeLabel">静止</span><span class="sub" id="freezeSub">映像を止める</span>
+          </button>
         </div>
       </div>
     </div>
@@ -182,7 +180,7 @@
   // 紙の比率（幅:高さ、縦向き基準）
   var RATIOS={ charcoal:{w:500,h:650,label:'木炭紙 500×650'}, b:{w:1000,h:1414,label:'B判 1:√2'} };
 
-  var state={ ratio:'charcoal', ori:'port', grid:4, col:'white', frozen:false, facing:'environment', mode:'camera' };
+  var state={ ratio:'charcoal', ori:'port', grid:4, frozen:false, facing:'environment', mode:'camera' };
   var stream=null;
 
   /* ---------- 映像だけの拡大縮小（枠・グリッドは固定） ---------- */
@@ -271,8 +269,9 @@
     if(cw/boxH > ar){ fh=boxH*margin; fw=fh*ar; } else { fw=cw*margin; fh=fw/ar; }
     var fx=(cw-fw)/2, fy=topInset+(boxH-fh)/2;
 
-    var line = state.col==='white' ? '#ffffff' : '#111111';
-    var shadow = state.col==='white' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.5)';
+    // 線は黒で固定（明るい背景に白の紙を置く想定）。白い縁取りで暗所でも視認できるようにする
+    var line = '#111111';
+    var shadow = 'rgba(255,255,255,.5)';
 
     // 枠の外を暗く（even-odd で切り抜き）
     var dim=document.createElementNS(SVGNS,'path');
@@ -336,7 +335,7 @@
     navigator.mediaDevices.getUserMedia({ video:{ facingMode:state.facing }, audio:false })
       .then(function(s){
         stream=s; video.srcObject=s; video.play();
-        state.frozen=false; document.getElementById('btnFreeze').classList.remove('on');
+        setFreeze(false);
         hideNotice();
       })
       .catch(function(err){
@@ -359,7 +358,7 @@
     var url=URL.createObjectURL(file);
     photo.onload=function(){ URL.revokeObjectURL(url); };
     photo.src=url;
-    state.mode='photo'; stopStream(); resetZoom();
+    state.mode='photo'; stopStream(); resetZoom(); setFreeze(false);
     video.style.display='none'; photo.style.display='block';
     hideNotice(); draw();
   }
@@ -378,16 +377,21 @@
     });
   }
   wireSeg('segRatio','ratio'); wireSeg('segOri','ori');
-  wireSeg('segGrid','grid'); wireSeg('segColor','col');
+  wireSeg('segGrid','grid');
 
   document.getElementById('btnFlip').addEventListener('click',function(){
     state.facing = state.facing==='environment' ? 'user' : 'environment';
     if(state.mode==='camera') startCamera();
   });
+  function setFreeze(on){
+    state.frozen=on;
+    document.getElementById('btnFreeze').classList.toggle('active',on);
+    document.getElementById('freezeLabel').textContent = on?'再開':'静止';
+    document.getElementById('freezeSub').textContent = on?'映像を動かす':'映像を止める';
+  }
   document.getElementById('btnFreeze').addEventListener('click',function(){
     if(state.mode!=='camera') return;
-    state.frozen=!state.frozen;
-    this.classList.toggle('on',state.frozen);
+    setFreeze(!state.frozen);
     if(state.frozen) video.pause(); else video.play();
   });
   document.getElementById('btnPhoto').addEventListener('click',function(){ fileInput.click(); });
