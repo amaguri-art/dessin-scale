@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="デッサンスケール">
+<meta name="apple-mobile-web-app-title" content="スケールくん">
 <meta name="theme-color" content="#0f1114">
-<title>デッサンスケール</title>
+<title>スケールくん</title>
 <style>
   :root{
     --bg:#0f1114;
@@ -107,7 +107,7 @@
     <svg id="overlay" preserveAspectRatio="none"></svg>
 
     <div class="top">
-      <div class="brand"><span class="dot"></span>デッサンスケール</div>
+      <div class="brand"><span class="dot"></span>スケールくん</div>
       <div class="top-actions">
         <button class="iconbtn" id="btnFlip" title="カメラ切替" aria-label="カメラ切替">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><path d="M12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M14.5 13.5 16 12l1.5 1.5M9.5 10.5 8 12l-1.5-1.5"/></svg>
@@ -151,8 +151,8 @@
         <span class="glabel">分割</span>
         <div class="seg" id="segGrid">
           <button data-grid="0">なし</button>
-          <button data-grid="2">4分割<span class="sub">2×2</span></button>
           <button data-grid="4" class="active">16分割<span class="sub">4×4</span></button>
+          <button data-grid="8">64分割<span class="sub">8×8</span></button>
         </div>
       </div>
       <div class="group">
@@ -297,7 +297,10 @@
       for(var i=1;i<n;i++){
         var gx=fx+fw*i/n, gy=fy+fh*i/n;
         var isCenter=(i===n/2);
-        var wv=isCenter?2.4:1.3;
+        // 太さは3段階：中央線=1.8 ＞ 4×4グリッドに一致する線=1.4 ＞ それ以外の細かい線=1.0
+        // （16分割では全ての内部線が4×4に一致するので、中央以外は1.4になる）
+        var quarter=n/4;
+        var wv = isCenter ? 1.8 : ((quarter>=1 && i%quarter===0) ? 1.4 : 1.0);
         seg(gx,fy,gx,fy+fh, wv+1.4, shadow); seg(gx,fy,gx,fy+fh, wv, line);
         seg(fx,gy,fx+fw,gy, wv+1.4, shadow); seg(fx,gy,fx+fw,gy, wv, line);
       }
