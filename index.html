@@ -34,7 +34,14 @@
      上に寄って下に余白ができるため。JS側で測り直して --appH を更新する */
   :root{ --appH:100vh }
   @supports (height:100dvh){ :root{ --appH:100dvh } }
-  .app{position:fixed;left:0;right:0;top:0;height:var(--appH);display:flex;flex-direction:column}
+  .app{position:fixed;left:0;right:0;top:0;height:var(--appH);display:flex;flex-direction:column;
+    opacity:1;transition:opacity .3s ease}
+  /* 高さが確定するまでは隠しておき、確定後にフェードインさせる。
+     隠す指定は JS が付ける settling クラスに紐づけてあるので、
+     JSが動かない環境では最初から表示されたままになる（真っ暗にならない） */
+  /* 隠すときは即座に（フェードアウト中にズレた画面が見えてしまうため）、
+     表示に戻すときだけ .app 側の transition でふわっと出す */
+  html.settling .app{opacity:0;transition:none}
 
   /* ---- 撮影ステージ ---- */
   .stage{position:relative;flex:1;overflow:hidden;background:#000;touch-action:none}
@@ -100,6 +107,12 @@
 
   .file{display:none}
 </style>
+<script>
+  /* 起動直後のズレた状態を見せないよう、最初のペイント前に隠す。
+     万一この後のスクリプトが止まっても必ず表示されるよう保険をかける */
+  document.documentElement.classList.add('settling');
+  setTimeout(function(){ document.documentElement.classList.remove('settling'); }, 1500);
+</script>
 </head>
 <body>
 
@@ -424,7 +437,25 @@
     document.documentElement.style.setProperty('--appH', h+'px');
     draw();
   }
-  function resyncSoon(){ [0,60,200,500,1000].forEach(function(ms){ setTimeout(syncAppHeight,ms); }); }
+  /* 高さが安定してからフェードインさせる。--appH が変化しなくなり、かつ
+     最低350ms経ってから表示する（遅れて届く測り直しのブレを拾わないため）。
+     どんな場合でも900msで必ず表示する保険つき */
+  var rootEl=document.documentElement, settleTimers=[];
+  function showApp(){ rootEl.classList.remove('settling'); }
+  function settleThenShow(){
+    settleTimers.forEach(clearTimeout); settleTimers=[];
+    rootEl.classList.add('settling');
+    var t0=Date.now(), last=-1, stable=0;
+    (function tick(){
+      var h=parseFloat(getComputedStyle(rootEl).getPropertyValue('--appH'))||0;
+      if(h===last){ stable++; } else { stable=0; last=h; }
+      if(stable>=2 && Date.now()-t0>=350){ showApp(); return; }
+      settleTimers.push(setTimeout(tick,70));
+    })();
+    settleTimers.push(setTimeout(showApp,900));
+  }
+
+  function resyncSoon(){ settleThenShow(); [0,60,200,500,1000].forEach(function(ms){ setTimeout(syncAppHeight,ms); }); }
 
   window.addEventListener('resize',syncAppHeight);
   if(window.ResizeObserver){ new ResizeObserver(draw).observe(stage); }
