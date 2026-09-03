@@ -29,7 +29,12 @@
     -webkit-user-select:none;user-select:none;overflow:hidden;
     -webkit-tap-highlight-color:transparent;
   }
-  .app{position:fixed;inset:0;display:flex;flex-direction:column}
+  /* 高さは実測値(--appH)で指定する。iOSはホーム画面から起動/復帰した直後に
+     ビューポート高さを誤って（前回の向きのまま）返すことがあり、アプリ全体が
+     上に寄って下に余白ができるため。JS側で測り直して --appH を更新する */
+  :root{ --appH:100vh }
+  @supports (height:100dvh){ :root{ --appH:100dvh } }
+  .app{position:fixed;left:0;right:0;top:0;height:var(--appH);display:flex;flex-direction:column}
 
   /* ---- 撮影ステージ ---- */
   .stage{position:relative;flex:1;overflow:hidden;background:#000;touch-action:none}
@@ -406,10 +411,33 @@
   document.getElementById('btnRetry').addEventListener('click',startCamera);
   fileInput.addEventListener('change',function(e){ if(e.target.files&&e.target.files[0]) usePhoto(e.target.files[0]); });
 
-  window.addEventListener('resize',draw);
-  if(window.ResizeObserver){ new ResizeObserver(draw).observe(stage); }
-  window.addEventListener('orientationchange',function(){ setTimeout(draw,300); });
+  /* ---------- 画面の高さを実測して合わせる ----------
+     iOSはホーム画面からの起動やバックグラウンド復帰の直後、ビューポート高さを
+     誤って返すことがある（前回の向きの値が残る）。その結果アプリ全体が上に寄り、
+     下に余白ができる。向きを変えると直るのは、そこで再測定が走るため。
+     ここでは実測値を --appH に入れ、復帰時や少し遅れたタイミングでも
+     測り直すことで、縦のまま開いても画面いっぱいに収まるようにする */
+  function syncAppHeight(){
+    var vv=window.visualViewport;
+    var h=vv?vv.height:window.innerHeight;
+    if(!h) return;
+    document.documentElement.style.setProperty('--appH', h+'px');
+    draw();
+  }
+  function resyncSoon(){ [0,60,200,500,1000].forEach(function(ms){ setTimeout(syncAppHeight,ms); }); }
 
+  window.addEventListener('resize',syncAppHeight);
+  if(window.ResizeObserver){ new ResizeObserver(draw).observe(stage); }
+  window.addEventListener('orientationchange',resyncSoon);
+  window.addEventListener('pageshow',resyncSoon);
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden) resyncSoon(); });
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',syncAppHeight);
+    window.visualViewport.addEventListener('scroll',syncAppHeight);
+  }
+
+  syncAppHeight();
+  resyncSoon();
   draw();
   startCamera();
 })();
