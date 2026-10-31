@@ -390,7 +390,13 @@
     state.mode='camera'; photo.style.display='none'; video.style.display=''; resetZoom();
     showNotice('カメラを起動しています…','許可ダイアログが出たら「許可」を選んでください。');
     stopStream();
-    navigator.mediaDevices.getUserMedia({ video:{ facingMode:state.facing }, audio:false })
+    // 保存する画像の細かさはカメラ映像の大きさで決まるため、最大4K（3840×2160）を希望する。
+    // ideal なので、対応していない端末は出せる範囲の最大で返る。それでも開けない端末は通常設定でやり直す
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:state.facing, width:{ideal:3840}, height:{ideal:2160} }, audio:false })
+      .catch(function(err){
+        if(err && (err.name==='NotAllowedError'||err.name==='SecurityError')) throw err;
+        return navigator.mediaDevices.getUserMedia({ video:{ facingMode:state.facing }, audio:false });
+      })
       .then(function(s){
         stream=s; video.srcObject=s; video.play();
         setFreeze(false);
@@ -516,7 +522,7 @@
   document.getElementById('btnSave').addEventListener('click',function(){
     var c=cropFrame();
     if(!c){ toast('映像がまだ準備できていません'); return; }
-    var file=dataUrlToFile(c.toDataURL('image/jpeg',0.95), stampName());
+    var file=dataUrlToFile(c.toDataURL('image/jpeg',0.98), stampName());
     if(navigator.canShare && navigator.canShare({files:[file]})){
       // iPhone：共有シートの「画像を保存」で写真アプリへ。Android：「写真」などへ
       navigator.share({files:[file]}).catch(function(err){
