@@ -96,11 +96,28 @@
   .seg button.active .sub{color:#5c4a00;opacity:1}
   .seg button:not(.active):active{background:var(--accent-dim);color:var(--text)}
 
-  /* 静止ボタン：サブ表示がないぶん、隣の「分割」と高さを揃えて中央に置く。
+  /* 静止・保存ボタン：サブ表示がないぶん、隣のグループと高さを揃えて中央に置く。
      縁取りの太さは他と同じ1pxのまま、色だけ黄色にして押す場所だと分かるようにする */
-  #segFreeze{flex:1;border-color:var(--accent)}
-  #btnFreeze{display:grid;place-items:center;font-size:14px;font-weight:800;color:var(--text)}
+  #segFreeze,#segSave{flex:1;border-color:var(--accent)}
+  #btnFreeze,#btnSave{display:grid;place-items:center;font-size:14px;font-weight:800;color:var(--text)}
   #btnFreeze.active{color:#1a1400}
+
+  /* 保存まわり：短いお知らせ（トースト）と、共有シートが使えないときの保存用プレビュー */
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 150px);transform:translateX(-50%);
+    max-width:86vw;padding:10px 16px;font-size:13px;line-height:1.5;text-align:center;color:var(--text);
+    background:var(--panel-solid);border:1px solid var(--stroke);border-radius:12px;
+    opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
+  .toast.show{opacity:1}
+  .saveview{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+    gap:12px;padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+    background:rgba(0,0,0,.92);z-index:30}
+  .saveview.show{display:flex}
+  .saveview img{max-width:100%;min-height:0;flex:0 1 auto;object-fit:contain;border:1px solid var(--stroke);
+    -webkit-user-select:auto;user-select:auto;-webkit-touch-callout:default}
+  .saveview p{margin:0;font-size:13px;line-height:1.7;color:var(--muted);text-align:center}
+  .saveview .row{display:flex;gap:10px}
+  .saveview a,.saveview button{font-family:inherit;font-size:13px;font-weight:600;padding:10px 18px;cursor:pointer;
+    color:var(--text);text-decoration:none;background:var(--panel-solid);border:1px solid var(--accent);border-radius:11px}
 
   .rowgroups{display:flex;gap:8px}
   .rowgroups .group{flex:1;min-width:0}
@@ -125,7 +142,7 @@
     <svg id="overlay" preserveAspectRatio="none"></svg>
 
     <div class="top">
-      <div class="brand"><span class="dot"></span>スケールくんv01</div>
+      <div class="brand"><span class="dot"></span>スケールくんv02</div>
       <div class="top-actions">
         <button class="iconbtn" id="btnFlip" title="カメラ切替" aria-label="カメラ切替">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><path d="M12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M14.5 13.5 16 12l1.5 1.5M9.5 10.5 8 12l-1.5-1.5"/></svg>
@@ -156,10 +173,9 @@
         </div>
       </div>
       <div class="group">
-        <span class="glabel">向き</span>
-        <div class="seg" id="segOri">
-          <button data-ori="port" class="active">縦</button>
-          <button data-ori="land">横</button>
+        <span class="glabel">黄色の枠内</span>
+        <div class="seg" id="segSave">
+          <button id="btnSave" title="黄色の枠内を画像として保存" aria-label="黄色の枠内を画像として保存">保存</button>
         </div>
       </div>
     </div>
@@ -184,6 +200,15 @@
 </div>
 
 <input type="file" accept="image/*" class="file" id="fileInput">
+<div class="toast" id="toast" role="status"></div>
+<div class="saveview" id="saveView">
+  <img id="saveImg" alt="保存する画像">
+  <p>画像を<b>長押し</b>すると保存できます（iPhoneは「“写真”に追加」、Androidは「画像をダウンロード」）。</p>
+  <div class="row">
+    <a id="saveLink" download="scale.jpg">ダウンロード</a>
+    <button id="saveClose">閉じる</button>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -202,8 +227,9 @@
   // 紙の比率（幅:高さ、縦向き基準）
   var RATIOS={ charcoal:{w:500,h:650,label:'木炭紙 500×650'}, b:{w:1000,h:1414,label:'B判 1:√2'} };
 
-  var state={ ratio:'charcoal', ori:'port', grid:4, frozen:false, facing:'environment', mode:'camera' };
+  var state={ ratio:'charcoal', grid:4, frozen:false, facing:'environment', mode:'camera' };
   var stream=null;
+  var frame=null;   // 黄色い紙枠の位置（ステージ座標）。draw() のたびに更新し、保存時の切り抜きに使う
 
   /* ---------- 映像だけの拡大縮小（枠・グリッドは固定） ---------- */
   var zoom={scale:1, tx:0, ty:0};
@@ -281,15 +307,18 @@
     while(svg.firstChild) svg.removeChild(svg.firstChild);
 
     var r=RATIOS[state.ratio], aw=r.w, ah=r.h;
-    if(state.ori==='land'){ var t=aw; aw=ah; ah=t; }
     // 上部バー（タイトル・各ボタン）に黄色枠がかぶらないよう上に余白を確保
     var topEl=document.querySelector('.top');
     var topInset=(topEl?topEl.getBoundingClientRect().height:56)+10;
     var bottomInset=10;
     var boxH=ch-topInset-bottomInset;
+    // 縦横の切替ボタンは廃止。画面が横長のときは紙も横向きにして、画面いっぱいに使う
+    var land=(cw>boxH);
+    if(land){ var t=aw; aw=ah; ah=t; }
     var ar=aw/ah, margin=0.94, fw, fh;
     if(cw/boxH > ar){ fh=boxH*margin; fw=fh*ar; } else { fw=cw*margin; fh=fw/ar; }
     var fx=(cw-fw)/2, fy=topInset+(boxH-fh)/2;
+    frame={x:fx, y:fy, w:fw, h:fh};
 
     // 線は黒で固定（明るい背景に白の紙を置く想定）。白い縁取りで暗所でも視認できるようにする
     var line = '#111111';
@@ -335,7 +364,7 @@
     tg.setAttribute('fill','#f4c542');tg.setAttribute('font-size','12');
     tg.setAttribute('font-family','var(--font)');tg.setAttribute('font-weight','600');
     tg.setAttribute('style','paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:3px');
-    tg.textContent=r.label+(state.ori==='land'?'（横）':'（縦）');
+    tg.textContent=r.label+(land?'（横）':'（縦）');
     svg.appendChild(tg);
   }
 
@@ -388,6 +417,81 @@
     hideNotice(); draw();
   }
 
+  /* ---------- 黄色い枠の中だけを画像として保存 ---------- */
+  var toastEl=document.getElementById('toast'), toastTimer=null;
+  function toast(msg){
+    toastEl.textContent=msg; toastEl.classList.add('show');
+    clearTimeout(toastTimer); toastTimer=setTimeout(function(){ toastEl.classList.remove('show'); },2600);
+  }
+
+  // 枠の中を、元の映像／写真の解像度のまま切り抜いて canvas にする。
+  // 画面上の見え方（object-fit:cover と、ピンチズーム・移動）を逆にたどって元画像の座標を求める。
+  // 枠・グリッド・暗くした外側は含めない（映像だけ）
+  function cropFrame(){
+    var photoMode=(state.mode==='photo');
+    var el=photoMode?photo:video;
+    var sw0=photoMode?photo.naturalWidth:video.videoWidth;
+    var sh0=photoMode?photo.naturalHeight:video.videoHeight;
+    var cw=stage.clientWidth, ch=stage.clientHeight;
+    if(!frame || !sw0 || !sh0 || !cw || !ch) return null;
+    if(!photoMode && video.readyState<2) return null;
+    var k=Math.max(cw/sw0, ch/sh0);              // object-fit:cover の倍率
+    var ox=(cw-sw0*k)/2, oy=(ch-sh0*k)/2;        // はみ出して隠れている分
+    function toSrc(px,py){
+      var lx=(px-cw/2-zoom.tx)/zoom.scale+cw/2;  // ズーム・移動を戻す
+      var ly=(py-ch/2-zoom.ty)/zoom.scale+ch/2;
+      return {x:(lx-ox)/k, y:(ly-oy)/k};
+    }
+    var a=toSrc(frame.x, frame.y), b=toSrc(frame.x+frame.w, frame.y+frame.h);
+    var sx=Math.max(0,a.x), sy=Math.max(0,a.y);
+    var sw=Math.min(sw0,b.x)-sx, sh=Math.min(sh0,b.y)-sy;
+    if(sw<1 || sh<1) return null;
+    var out=Math.min(1, 4096/Math.max(sw,sh));   // 長辺は最大4096px
+    var c=document.createElement('canvas');
+    c.width=Math.round(sw*out); c.height=Math.round(sh*out);
+    c.getContext('2d').drawImage(el, sx,sy,sw,sh, 0,0,c.width,c.height);
+    return c;
+  }
+  function pad2(n){ return (n<10?'0':'')+n; }
+  function stampName(){
+    var d=new Date();
+    return 'scale-'+d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'-'+
+      pad2(d.getHours())+pad2(d.getMinutes())+pad2(d.getSeconds())+'.jpg';
+  }
+  // 共有シートはタップ直後の同期処理の中で呼ぶ必要があるため（iOSは待つと拒否される）、
+  // toBlob（非同期）ではなく toDataURL（同期）から File を作る
+  function dataUrlToFile(url,name){
+    var bin=atob(url.split(',')[1]), n=bin.length, u8=new Uint8Array(n);
+    for(var i=0;i<n;i++) u8[i]=bin.charCodeAt(i);
+    return new File([u8], name, {type:'image/jpeg'});
+  }
+  var saveView=document.getElementById('saveView');
+  var saveImg=document.getElementById('saveImg');
+  var saveLink=document.getElementById('saveLink');
+  var saveUrl=null;
+  // 共有シートが使えないとき（PCなど）の代わり：画像を表示して、長押し保存／ダウンロードしてもらう
+  function showSaveView(file){
+    if(saveUrl) URL.revokeObjectURL(saveUrl);
+    saveUrl=URL.createObjectURL(file);
+    saveImg.src=saveUrl; saveLink.href=saveUrl; saveLink.download=file.name;
+    saveView.classList.add('show');
+  }
+  document.getElementById('saveClose').addEventListener('click',function(){ saveView.classList.remove('show'); });
+  document.getElementById('btnSave').addEventListener('click',function(){
+    var c=cropFrame();
+    if(!c){ toast('映像がまだ準備できていません'); return; }
+    var file=dataUrlToFile(c.toDataURL('image/jpeg',0.95), stampName());
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      // iPhone：共有シートの「画像を保存」で写真アプリへ。Android：「写真」などへ
+      navigator.share({files:[file]}).catch(function(err){
+        if(err && err.name==='AbortError') return;   // 共有シートを閉じただけ
+        showSaveView(file);
+      });
+    }else{
+      showSaveView(file);
+    }
+  });
+
   /* ---------- UI 配線 ---------- */
   function wireSeg(id,key,cb){
     var seg=document.getElementById(id);
@@ -401,7 +505,7 @@
       draw();
     });
   }
-  wireSeg('segRatio','ratio'); wireSeg('segOri','ori');
+  wireSeg('segRatio','ratio');
   wireSeg('segGrid','grid');
 
   document.getElementById('btnFlip').addEventListener('click',function(){
