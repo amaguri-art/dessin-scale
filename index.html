@@ -101,6 +101,7 @@
   #segFreeze,#segSave{flex:1;border-color:var(--accent)}
   #btnFreeze,#btnSave{display:grid;place-items:center;font-size:14px;font-weight:800;color:var(--text)}
   #btnFreeze.active{color:#1a1400}
+  #btnLines{flex:0 0 auto;padding:6px 11px;font-size:12px}
 
   /* 保存まわり：短いお知らせ（トースト）と、共有シートが使えないときの保存用プレビュー */
   .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 150px);transform:translateX(-50%);
@@ -175,6 +176,7 @@
       <div class="group">
         <span class="glabel">黄色の枠内</span>
         <div class="seg" id="segSave">
+          <button id="btnLines" class="active" title="保存する画像に枠とグリッドの線を入れる／入れない" aria-pressed="true">線あり</button>
           <button id="btnSave" title="黄色の枠内を画像として保存" aria-label="黄色の枠内を画像として保存">保存</button>
         </div>
       </div>
@@ -300,6 +302,12 @@
   },{passive:false});
 
   /* ---------- オーバーレイ描画 ---------- */
+  // 内部グリッドの線の太さ。3段階：中央線=1.8 ＞ 4×4グリッドに一致する線=1.4 ＞ それ以外の細かい線=1.0
+  // （16分割では全ての内部線が4×4に一致するので、中央以外は1.4になる）。画面表示と保存画像の両方で使う
+  function gridWidth(i,n){
+    var quarter=n/4;
+    return (i===n/2) ? 1.8 : ((quarter>=1 && i%quarter===0) ? 1.4 : 1.0);
+  }
   function draw(){
     var cw=stage.clientWidth, ch=stage.clientHeight;
     if(!cw||!ch) return;
@@ -343,11 +351,7 @@
     if(n>=2){
       for(var i=1;i<n;i++){
         var gx=fx+fw*i/n, gy=fy+fh*i/n;
-        var isCenter=(i===n/2);
-        // 太さは3段階：中央線=1.8 ＞ 4×4グリッドに一致する線=1.4 ＞ それ以外の細かい線=1.0
-        // （16分割では全ての内部線が4×4に一致するので、中央以外は1.4になる）
-        var quarter=n/4;
-        var wv = isCenter ? 1.8 : ((quarter>=1 && i%quarter===0) ? 1.4 : 1.0);
+        var wv=gridWidth(i,n);
         seg(gx,fy,gx,fy+fh, wv+1.4, shadow); seg(gx,fy,gx,fy+fh, wv, line);
         seg(fx,gy,fx+fw,gy, wv+1.4, shadow); seg(fx,gy,fx+fw,gy, wv, line);
       }
@@ -449,8 +453,30 @@
     var out=Math.min(1, 4096/Math.max(sw,sh));   // 長辺は最大4096px
     var c=document.createElement('canvas');
     c.width=Math.round(sw*out); c.height=Math.round(sh*out);
-    c.getContext('2d').drawImage(el, sx,sy,sw,sh, 0,0,c.width,c.height);
+    var ctx=c.getContext('2d');
+    ctx.drawImage(el, sx,sy,sw,sh, 0,0,c.width,c.height);
+    if(saveLines) drawLines(ctx, c.width, c.height, c.width/frame.w);
     return c;
+  }
+
+  // 保存画像に線を入れるか（「線あり／線なし」ボタン）。選んだ状態は端末に覚えておく
+  var saveLines=true;
+  try{ if(localStorage.getItem('scaleSaveLines')==='0') saveLines=false; }catch(e){}
+
+  // 画面と同じ見た目（影→黒線の二度描き＋黄色い紙の縁）を、画像の解像度に合わせて拡大して描く
+  function drawLines(ctx,w,h,s){
+    var n=state.grid;
+    function ln(x1,y1,x2,y2,lw,color){
+      ctx.strokeStyle=color; ctx.lineWidth=lw*s; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    }
+    for(var i=1;i<n;i++){
+      var gx=w*i/n, gy=h*i/n, wv=gridWidth(i,n);
+      ln(gx,0,gx,h, wv+1.4,'rgba(255,255,255,.5)'); ln(gx,0,gx,h, wv,'#111111');
+      ln(0,gy,w,gy, wv+1.4,'rgba(255,255,255,.5)'); ln(0,gy,w,gy, wv,'#111111');
+    }
+    var bw=3*s;   // 黄色の縁は画像の外にはみ出さないよう、内側に寄せて描く
+    ctx.strokeStyle='#f4c542'; ctx.lineWidth=bw; ctx.strokeRect(bw/2,bw/2,w-bw,h-bw);
   }
   function pad2(n){ return (n<10?'0':'')+n; }
   function stampName(){
@@ -477,6 +503,16 @@
     saveView.classList.add('show');
   }
   document.getElementById('saveClose').addEventListener('click',function(){ saveView.classList.remove('show'); });
+  var btnLines=document.getElementById('btnLines');
+  function setLines(on){
+    saveLines=on;
+    btnLines.classList.toggle('active',on);
+    btnLines.setAttribute('aria-pressed',on?'true':'false');
+    btnLines.textContent=on?'線あり':'線なし';
+    try{ localStorage.setItem('scaleSaveLines',on?'1':'0'); }catch(e){}
+  }
+  btnLines.addEventListener('click',function(){ setLines(!saveLines); });
+  setLines(saveLines);
   document.getElementById('btnSave').addEventListener('click',function(){
     var c=cropFrame();
     if(!c){ toast('映像がまだ準備できていません'); return; }
